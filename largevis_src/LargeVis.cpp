@@ -1,19 +1,10 @@
 #include "LargeVis.h"
 #include <map>
 #include <float.h>
+#include <vector>
 
-boost::minstd_rand LargeVis::generator(42u);
-boost::uniform_real<> LargeVis::uni_dist(0, 1);
-boost::variate_generator<boost::minstd_rand&, boost::uniform_real<> > LargeVis::uni(generator, uni_dist);
-
-namespace boost
-{
-#ifdef BOOST_NO_EXCEPTIONS
-	void throw_exception(std::exception const & e){
-		throw 11; // or whatever
-	};
-#endif
-}
+std::minstd_rand LargeVis::generator(42u);
+std::uniform_real_distribution<double> LargeVis::uni_dist(0, 1);
 
 LargeVis::LargeVis()
 {
@@ -290,13 +281,14 @@ void LargeVis::run_annoy()
 	if(n_threads > 1) annoy_index->save("annoy_index_file");
 	knn_vec = new std::vector<int>[n_vertices];
 
-	boost::thread *pt = new boost::thread[n_threads];
-	for (int i = 0; i < n_threads; ++i)
-		pt[i] = boost::thread(&LargeVis::annoy_thread, this, i);
-	for (int i = 0; i < n_threads; ++i)
-		pt[i].join();
-	delete[] pt;
-    	delete annoy_index; annoy_index = NULL;
+	vector<std::thread> threads;
+	for (int i = 0; i < n_threads; i++) {
+		threads.push_back(std::thread(&LargeVis::annoy_thread, this, i));
+    }
+    for (auto &t : threads) {
+		t.join();
+    }
+	delete annoy_index; annoy_index = NULL;
 	printf(" Done.\n");
 }
 
@@ -348,10 +340,14 @@ void LargeVis::run_propagation()
 		fflush(stdout);
 		old_knn_vec = knn_vec;
 		knn_vec = new std::vector<int>[n_vertices];
-		boost::thread *pt = new boost::thread[n_threads];
-		for (int j = 0; j < n_threads; ++j) pt[j] = boost::thread(&LargeVis::propagation_thread, this, j);
-		for (int j = 0; j < n_threads; ++j) pt[j].join();
-		delete[] pt;
+
+		vector<std::thread> threads;
+		for (int i = 0; i < n_threads; i++) {
+			threads.push_back(std::thread(&LargeVis::propagation_thread, this, i));
+		}
+		for (auto &t : threads) {
+			t.join();
+		}
 		delete[] old_knn_vec; old_knn_vec = NULL;
 	}
 	printf("\n");
@@ -441,16 +437,23 @@ void LargeVis::compute_similarity()
 	}
     	delete[] vec; vec = NULL;
     	delete[] knn_vec; knn_vec = NULL;
-	boost::thread *pt = new boost::thread[n_threads];
-	for (int j = 0; j < n_threads; ++j) pt[j] = boost::thread(&LargeVis::compute_similarity_thread, this, j);
-	for (int j = 0; j < n_threads; ++j) pt[j].join();
-	delete[] pt;
 
-	pt = new boost::thread[n_threads];
-	for (int j = 0; j < n_threads; ++j) pt[j] = boost::thread(&LargeVis::search_reverse_thread, this, j);
-	for (int j = 0; j < n_threads; ++j) pt[j].join();
-	delete[] pt;
-	
+	vector<std::thread> threads_similarity;
+	for (int i = 0; i < n_threads; i++) {
+		threads_similarity.push_back(std::thread(&LargeVis::compute_similarity_thread, this, i));
+	}
+	for (auto &t : threads_similarity) {
+		t.join();
+	}
+
+	vector<std::thread> threads_search;
+	for (int i = 0; i < n_threads; i++) {
+		threads_search.push_back(std::thread(&LargeVis::search_reverse_thread, this, i));
+	}
+	for (auto &t : threads_search) {
+		t.join();
+	}
+
 	for (x = 0; x < n_vertices; ++x)
 	{
 		for (p = head[x]; p >= 0; p = next[p])
@@ -482,7 +485,7 @@ void LargeVis::test_accuracy()
 	long long hit_case = 0, i, j, x, y;
 	for (i = 0; i < test_case; ++i)
 	{
-		x = floor(uni() * (n_vertices - 0.1));
+		x = floor(uni_dist(generator) * (n_vertices - 0.1));
 		for (y = 0; y < n_vertices; ++y) if (x != y)
 		{
 			heap->push(std::make_pair(CalcDist(x, y), y));
@@ -565,7 +568,7 @@ void LargeVis::visualize_thread(int id)
 			printf("%cFitting model\tAlpha: %f Progress: %.3lf%%", 13, cur_alpha, (real)edge_count_actual / (real)(n_samples + 1) * 100);
 			fflush(stdout);
 		}
-		p = sample_an_edge(uni(), uni());
+		p = sample_an_edge(uni_dist(generator), uni_dist(generator));
 		x = edge_from[p];
 		y = edge_to[p];
 		lx = x * out_dim;
@@ -574,7 +577,7 @@ void LargeVis::visualize_thread(int id)
 		{
 			if (i > 0)
 			{
-				y = neg_table[(unsigned long long)floor(uni() * (neg_size - 0.1))];
+				y = neg_table[(unsigned long long)floor(uni_dist(generator) * (neg_size - 0.1))];
 				if (y == edge_to[p]) continue;
 			}
 			ly = y * out_dim;
@@ -605,13 +608,16 @@ void LargeVis::visualize()
 {
 	long long i;
 	vis = new real[n_vertices * out_dim];
-	for (i = 0; i < n_vertices * out_dim; ++i) vis[i] = (uni() - 0.5) / out_dim * 0.0001;
+	for (i = 0; i < n_vertices * out_dim; ++i) vis[i] = (uni_dist(generator) - 0.5) / out_dim * 0.0001;
 	init_neg_table();
 	init_alias_table();
-	boost::thread *pt = new boost::thread[n_threads];
-	for (int j = 0; j < n_threads; ++j) pt[j] = boost::thread(&LargeVis::visualize_thread, this, j);
-	for (int j = 0; j < n_threads; ++j) pt[j].join();
-	delete[] pt;
+	vector<std::thread> threads;
+	for (int i = 0; i < n_threads; i++) {
+		threads.push_back(std::thread(&LargeVis::visualize_thread, this, i));
+    }
+    for (auto &t : threads) {
+		t.join();
+    }
 	printf("\n");
 }
 

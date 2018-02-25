@@ -6,21 +6,11 @@
 #include <string.h>
 #include <math.h>
 #include <vector>
+#include <random>
+#include <thread>
 
-#ifdef _MSC_VER
-#include <boost/thread.hpp>
-#include <boost/random.hpp>
-#include <boost/random/linear_congruential.hpp>
-#include <boost/random/uniform_int.hpp>
-#include <boost/random/uniform_real.hpp>
-#include <boost/random/variate_generator.hpp>
-#else
-#include <pthread.h>
-#include <gsl/gsl_rng.h>
-#endif
-
-#include "annoylib.h"
-#include "kissrandom.h"
+#include "../annoy/src/annoylib.h"
+#include "../annoy/src/kissrandom.h"
 
 typedef float real;
 
@@ -40,10 +30,8 @@ private:
     long long neg_size;
 	long long *alias;
 	real *prob;
-
-	static boost::minstd_rand generator;
-	static boost::uniform_real<> uni_dist;
-	static boost::variate_generator<boost::minstd_rand&, boost::uniform_real<> > uni;
+	static std::minstd_rand generator;
+	static std::uniform_real_distribution<double> uni_dist;
 
 	void clean_model();
 	void clean_data();
