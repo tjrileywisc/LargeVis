@@ -2,3 +2,4 @@
 build/
 Examples/
 annoy_index_file
+knn_graph.txt
